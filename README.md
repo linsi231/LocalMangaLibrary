@@ -181,10 +181,6 @@ v0.1.0-alpha
 
 这是一个早期测试版本，可能仍存在 bug。
 This is an early alpha release and may still contain bugs.
-
-建议先用于个人本地目录预览和测试，不建议作为长期稳定的漫画管理方案。
-It is recommended for personal local folder preview and testing, not yet as a long-term stable manga management solution.
-
 ---
 
 ## 🚧 已知限制 / Known Limitations
