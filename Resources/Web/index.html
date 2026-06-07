@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Local Manga Library</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">L</div>
+        <div>
+          <strong>Local Manga</strong>
+          <span>Library</span>
+        </div>
+      </div>
+      <nav class="side-nav" aria-label="主导航">
+        <button class="active">媒体库</button>
+      </nav>
+      <section class="storage-card">
+        <span>当前库</span>
+        <strong id="sidebarRoot">未设置</strong>
+        <small id="scanTime">尚未扫描</small>
+      </section>
+    </aside>
+
+    <main class="app-shell">
+      <header class="topbar">
+        <button class="icon-button" id="menuButton" aria-label="菜单">☰</button>
+        <h1>媒体库</h1>
+        <label class="search-box">
+          <span>⌕</span>
+          <input id="searchInput" type="search" placeholder="搜索目录名" autocomplete="off" />
+        </label>
+        <div class="top-actions">
+          <button class="icon-button active" aria-label="网格视图">▦</button>
+          <select id="sortSelect" aria-label="排序">
+            <option value="name">名称</option>
+            <option value="modified">修改时间</option>
+            <option value="files">文件数量</option>
+            <option value="size">总大小</option>
+          </select>
+        </div>
+      </header>
+
+      <section class="setup-band" id="setupBand">
+        <div>
+          <strong>确认漫画库位置</strong>
+          <span id="setupHint">启动前请确认根目录是否正常，或刷新索引。</span>
+        </div>
+        <div class="path-controls">
+          <input id="rootInput" type="text" placeholder="例如 D:\Manga 或 E:\Books\Comic" />
+          <button id="saveRootButton">确认路径</button>
+          <button class="primary" id="refreshButton">刷新索引</button>
+        </div>
+      </section>
+
+      <section class="cache-band">
+        <div>
+          <strong>缓存管理</strong>
+          <span id="cacheInfo">缓存位置：.cache</span>
+        </div>
+        <button id="clearCacheButton">清除缓存</button>
+      </section>
+
+      <section class="section-head">
+        <div>
+          <h2>最近浏览的作品</h2>
+        </div>
+      </section>
+      <section class="recent-strip" id="recentStrip"></section>
+
+      <section class="section-head library-head">
+        <div>
+          <h2>本地媒体库</h2>
+          <span id="libraryCount">合计：0 作品</span>
+        </div>
+        <span id="statusText"></span>
+      </section>
+      <section class="grid" id="libraryGrid"></section>
+    </main>
+
+    <aside class="detail-panel" id="detailPanel" aria-hidden="true">
+      <div class="detail-head">
+        <strong>作品详情</strong>
+        <button class="icon-button" id="closeDetail" aria-label="关闭">×</button>
+      </div>
+      <div class="detail-cover-wrap">
+        <img id="detailCover" alt="" />
+      </div>
+      <h3 id="detailTitle"></h3>
+      <dl class="detail-list">
+        <dt>完整路径</dt>
+        <dd id="detailPath"></dd>
+        <dt>文件数</dt>
+        <dd id="detailFileCount"></dd>
+        <dt>图片数</dt>
+        <dd id="detailImageCount"></dd>
+        <dt>总大小</dt>
+        <dd id="detailSize"></dd>
+        <dt>修改时间</dt>
+        <dd id="detailModified"></dd>
+      </dl>
+      <label class="note-field">
+        <span>备注</span>
+        <textarea id="decisionNote" rows="3"></textarea>
+      </label>
+      <div class="detail-actions">
+        <button class="primary" id="readButton">开始浏览</button>
+        <button class="primary" id="openFolderButton">打开目录</button>
+        <button id="addRecentButton">加入最近浏览</button>
+        <button id="markDuplicateButton">标记待检查</button>
+      </div>
+      <div class="status-actions">
+        <button data-status="keep">保留</button>
+        <button data-status="skip">跳过</button>
+        <button data-status="pending">待定</button>
+      </div>
+    </aside>
+
+    <section class="reader" id="reader" aria-hidden="true">
+      <header class="reader-toolbar">
+        <button class="reader-close" id="readerClose" aria-label="关闭阅读器">×</button>
+        <div class="reader-title">
+          <strong id="readerTitle">漫画浏览</strong>
+          <span id="readerCounter">0 / 0</span>
+        </div>
+        <div class="reader-controls">
+          <div class="segmented" aria-label="浏览方式">
+            <button id="verticalModeButton" data-mode="vertical">竖版</button>
+            <button id="horizontalSingleModeButton" data-mode="horizontal-single">横板单页</button>
+            <button class="active" id="horizontalModeButton" data-mode="horizontal">横板双页</button>
+          </div>
+          <button id="readerPrev">上一页</button>
+          <button id="readerNext">下一页</button>
+        </div>
+      </header>
+      <div class="reader-stage" id="readerStage"></div>
+    </section>
+
+    <template id="cardTemplate">
+      <article class="work-card">
+        <button class="card-button">
+          <div class="cover-box">
+            <img alt="" loading="lazy" />
+            <span class="count-badge"></span>
+          </div>
+          <strong></strong>
+          <div class="meta-line">
+            <span class="image-count"></span>
+            <span class="size-label"></span>
+          </div>
+        </button>
+        <button class="card-detail-button">详情</button>
+      </article>
+    </template>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

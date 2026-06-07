@@ -1,0 +1,28 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+publish/
+releases/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.rsuser
+
+# Runtime data
+data/
+cache/
+.cache/
+logs/
+*.log
+
+# Local app data
+config.json
+index.json
+recent.json
+decisions.json
+
+# Packages / test
+*.nupkg
+TestResults/
