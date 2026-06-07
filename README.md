@@ -165,8 +165,6 @@ LocalMangaLibrary.Wpf/
 运行时会在本地生成必要的数据与缓存文件。
 Runtime data and cache files are generated locally.
 
-请不要将个人缓存、扫描索引、日志或本地路径配置提交到仓库。
-Do not commit personal cache files, scan indexes, logs, or local path configurations to the repository.
 
 ---
 
