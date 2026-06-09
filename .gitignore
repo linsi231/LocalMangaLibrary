@@ -25,7 +25,7 @@ decisions.json
 
 # Packages / test
 *.nupkg
-TestResults/TestResults/
+TestResults/
 bin/
 obj/
 .vs/
