@@ -14,7 +14,14 @@ LocalMangaLibrary 是一个面向 Windows 的本地漫画快速浏览工具。
 LocalMangaLibrary is a portable local manga browser for Windows.
 It is designed for temporary local browsing instead of long-term library management.
 
----
+-支持系统：
+- 推荐：Windows 10 x64 / Windows 11 x64
+- 需要：Microsoft Edge WebView2 Runtime
+- 不保证支持：Windows 7 / Windows 8.1
+
+架构：
+- 推荐下载 win-x64 版本
+- win-x86 版本暂不作为主要支持目标--
 
 ## 当前定位 / Project Positioning
 
