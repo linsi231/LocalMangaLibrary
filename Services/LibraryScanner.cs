@@ -6,7 +6,7 @@ public sealed class LibraryScanner
 {
     private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif",
+        ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".avif",
     };
 
     private static readonly string[] CoverHints = ["cover", "front", "封面", "表紙", "hyoushi"];
@@ -26,13 +26,16 @@ public sealed class LibraryScanner
             return [];
         }
 
-        return Directory.EnumerateFiles(folderPath, "*", SearchOption.AllDirectories)
+        var stats = new ScanStats();
+        return SafeEnumerateFiles(folderPath, true, stats)
             .Where(path => ImageExtensions.Contains(Path.GetExtension(path)))
             .OrderBy(path => path, NaturalPathComparer.Instance)
             .ToList();
     }
 
-    public WorkItem ScanWork(string folderPath, bool generateThumbnail)
+    public WorkItem ScanWork(string folderPath, bool generateThumbnail) => ScanWorkDetailed(folderPath, generateThumbnail, CancellationToken.None).Item;
+
+    public WorkScanResult ScanWorkDetailed(string folderPath, bool generateThumbnail, CancellationToken cancellationToken = default)
     {
         var dir = new DirectoryInfo(folderPath);
         var fileCount = 0;
@@ -40,9 +43,11 @@ public sealed class LibraryScanner
         long totalSize = 0;
         var lastModified = dir.Exists ? dir.LastWriteTime : DateTime.MinValue;
         var imagePaths = new List<string>();
+        var stats = new ScanStats();
 
-        foreach (var filePath in Directory.EnumerateFiles(folderPath, "*", SearchOption.AllDirectories))
+        foreach (var filePath in SafeEnumerateFiles(folderPath, true, stats, cancellationToken))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             try
             {
                 var file = new FileInfo(filePath);
@@ -61,6 +66,7 @@ public sealed class LibraryScanner
             }
             catch
             {
+                stats.AddError(filePath, new IOException("无法读取文件信息。"));
                 // Ignore inaccessible files; browsing should continue.
             }
         }
@@ -70,27 +76,86 @@ public sealed class LibraryScanner
         var coverImage = PickCover(imagePaths);
         var thumbName = generateThumbnail && !string.IsNullOrEmpty(coverImage) ? _imageCache.MakeThumbnail(coverImage) : "";
 
-        return new WorkItem
+        stats.TotalImageCount = imageCount;
+
+        return new WorkScanResult
         {
-            FolderName = dir.Name,
-            FolderPath = dir.FullName,
-            FileCount = fileCount,
-            ImageCount = imageCount,
-            TotalSize = totalSize,
-            TotalSizeLabel = FormatService.FormatBytes(totalSize),
-            FirstImage = firstImage,
-            CoverImage = coverImage,
-            ThumbUrl = string.IsNullOrEmpty(thumbName) ? "" : $"/thumbs/{thumbName}",
-            LastModified = new DateTimeOffset(lastModified).ToString("yyyy-MM-ddTHH:mm:sszzz"),
+            Item = new WorkItem
+            {
+                FolderName = dir.Name,
+                FolderPath = dir.FullName,
+                FileCount = fileCount,
+                ImageCount = imageCount,
+                TotalSize = totalSize,
+                TotalSizeLabel = FormatService.FormatBytes(totalSize),
+                FirstImage = firstImage,
+                CoverImage = coverImage,
+                ThumbUrl = string.IsNullOrEmpty(thumbName) ? "" : $"/thumbs/{thumbName}",
+                LastModified = new DateTimeOffset(lastModified).ToString("yyyy-MM-ddTHH:mm:sszzz"),
+                LastWriteTimeUtc = new DateTimeOffset(lastModified.ToUniversalTime()).ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                IsMissing = false,
+            },
+            Stats = stats,
         };
     }
 
-    public List<(string Folder, Dictionary<string, object?> Metadata)> DirectTargets(string rootPath)
+    public WorkFingerprint ComputeFingerprint(string folderPath, ScanStats stats, CancellationToken cancellationToken = default)
     {
-        return Directory.EnumerateDirectories(rootPath)
-            .OrderBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)
-            .Select(path => (path, new Dictionary<string, object?>()))
+        var fingerprint = new WorkFingerprint();
+        foreach (var filePath in SafeEnumerateFiles(folderPath, true, stats, cancellationToken))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var file = new FileInfo(filePath);
+                fingerprint.FileCount++;
+                fingerprint.TotalSize += file.Length;
+                if (file.LastWriteTimeUtc > fingerprint.LastWriteTimeUtc)
+                {
+                    fingerprint.LastWriteTimeUtc = file.LastWriteTimeUtc;
+                }
+                if (ImageExtensions.Contains(file.Extension))
+                {
+                    fingerprint.ImageCount++;
+                }
+            }
+            catch (Exception ex) when (IsFilesystemException(ex))
+            {
+                stats.AddError(filePath, ex);
+            }
+        }
+        return fingerprint;
+    }
+
+    public bool SameFingerprint(WorkItem item, WorkFingerprint fingerprint)
+    {
+        return item.FileCount == fingerprint.FileCount
+            && item.ImageCount == fingerprint.ImageCount
+            && item.TotalSize == fingerprint.TotalSize
+            && string.Equals(item.LastWriteTimeUtc, fingerprint.LastWriteTimeUtcIso, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public ScanDiscoveryResult DirectTargets(string rootPath, CancellationToken cancellationToken = default)
+    {
+        var result = new ScanDiscoveryResult
+        {
+            Extra = new LibraryIndex { ScanSource = "recursive_direct" },
+        };
+
+        foreach (var child in SafeEnumerateDirectories(rootPath, result.Stats, cancellationToken).OrderBy(path => path, NaturalPathComparer.Instance))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            DiscoverWorkTargets(child, result, cancellationToken);
+        }
+
+        result.Targets = result.Targets
+            .OrderBy(target => target.Folder, NaturalPathComparer.Instance)
             .ToList();
+        result.Extra.ScannedDirectoryCount = result.Stats.ScannedDirectoryCount;
+        result.Extra.SkippedDirectoryCount = result.Stats.SkippedDirectoryCount;
+        result.Extra.ErrorCount = result.Stats.ErrorCount;
+        result.Extra.ErrorsSample = result.Stats.ErrorsSample.ToList();
+        return result;
     }
 
     public (List<(string Folder, Dictionary<string, object?> Metadata)> Targets, LibraryIndex Extra) CsvTargets(string rootPath, string csvPath)
@@ -162,6 +227,96 @@ public sealed class LibraryScanner
 
         return images.FirstOrDefault() ?? "";
     }
+
+    private static void DiscoverWorkTargets(string folder, ScanDiscoveryResult result, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        result.Stats.ScannedDirectoryCount++;
+        var directImages = SafeEnumerateFiles(folder, false, result.Stats, cancellationToken)
+            .Where(path => ImageExtensions.Contains(Path.GetExtension(path)))
+            .OrderBy(path => path, NaturalPathComparer.Instance)
+            .ToList();
+        if (directImages.Count > 0)
+        {
+            result.Targets.Add((folder, new Dictionary<string, object?>
+            {
+                ["direct_image_count"] = directImages.Count,
+            }));
+            return;
+        }
+
+        var children = SafeEnumerateDirectories(folder, result.Stats, cancellationToken)
+            .OrderBy(path => path, NaturalPathComparer.Instance)
+            .ToList();
+        if (children.Count == 0)
+        {
+            result.Stats.SkippedDirectoryCount++;
+            return;
+        }
+
+        foreach (var child in children)
+        {
+            DiscoverWorkTargets(child, result, cancellationToken);
+        }
+    }
+
+    private static IEnumerable<string> SafeEnumerateFiles(string folder, bool recursive, ScanStats stats, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        List<string> files;
+        try
+        {
+            files = Directory.EnumerateFiles(folder).ToList();
+        }
+        catch (Exception ex) when (IsFilesystemException(ex))
+        {
+            stats.AddError(folder, ex);
+            yield break;
+        }
+
+        foreach (var file in files)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return file;
+        }
+
+        if (!recursive)
+        {
+            yield break;
+        }
+
+        foreach (var child in SafeEnumerateDirectories(folder, stats, cancellationToken))
+        {
+            foreach (var file in SafeEnumerateFiles(child, true, stats, cancellationToken))
+            {
+                yield return file;
+            }
+        }
+    }
+
+    private static IEnumerable<string> SafeEnumerateDirectories(string folder, ScanStats stats, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        List<string> directories;
+        try
+        {
+            directories = Directory.EnumerateDirectories(folder).ToList();
+        }
+        catch (Exception ex) when (IsFilesystemException(ex))
+        {
+            stats.AddError(folder, ex);
+            yield break;
+        }
+
+        foreach (var directory in directories)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return directory;
+        }
+    }
+
+    private static bool IsFilesystemException(Exception ex) =>
+        ex is IOException or UnauthorizedAccessException or PathTooLongException or DirectoryNotFoundException or NotSupportedException;
 }
 
 public sealed class NaturalPathComparer : IComparer<string>

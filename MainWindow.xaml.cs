@@ -12,35 +12,51 @@ public partial class MainWindow : Window
     private const string AppHost = "local.manga.library";
     private readonly LocalApiService _api = new();
     private bool _cleanupStarted;
+    private bool _shutdownApproved;
 
     public MainWindow()
     {
         InitializeComponent();
+        _api.ExitRequested += () => Dispatcher.Invoke(async () => await BeginExitAsync(confirmFirst: false));
         Loaded += async (_, _) => await InitializeWebViewAsync();
         Closing += HandleClosing;
     }
 
     private void HandleClosing(object? sender, CancelEventArgs e)
     {
+        if (_shutdownApproved)
+        {
+            return;
+        }
+
+        e.Cancel = true;
+        _ = BeginExitAsync(confirmFirst: true);
+    }
+
+    private async Task BeginExitAsync(bool confirmFirst)
+    {
         if (_cleanupStarted)
         {
             return;
         }
 
-        var result = MessageBox.Show(
-            this,
-            "确认退出 Local Manga Library？\n退出时会清理当前应用目录下的 .cache 缓存。",
-            "确认退出",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Question);
-
-        if (result != MessageBoxResult.Yes)
+        if (confirmFirst)
         {
-            e.Cancel = true;
-            return;
+            var result = MessageBox.Show(
+                this,
+                "确认退出 Local Manga Library？\n本次运行的路径、索引、历史、设置和缓存都会被清理。",
+                "确认退出",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result != MessageBoxResult.Yes)
+            {
+                return;
+            }
         }
 
         _cleanupStarted = true;
+        _api.CancelBackgroundWork();
         try
         {
             if (Browser.CoreWebView2 is not null)
@@ -55,15 +71,29 @@ public partial class MainWindow : Window
             // The cache cleanup below is still safe if WebView2 has already torn down.
         }
 
-        _api.ClearCacheOnShutdown();
+        var cleanup = await Task.Run(() => _api.ClearCacheOnShutdown());
+        if (!cleanup.Ok)
+        {
+            var result = MessageBox.Show(
+                this,
+                "本次 session 清理未完全完成，是否仍然退出？",
+                "session 清理",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+            if (result != MessageBoxResult.Yes)
+            {
+                _cleanupStarted = false;
+                return;
+            }
+        }
+
+        _shutdownApproved = true;
+        Close();
     }
 
     private async Task InitializeWebViewAsync()
     {
-        var userDataFolder = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "LocalMangaLibrary",
-            "WebView2");
+        var userDataFolder = _api.WebViewUserDataDir;
         Directory.CreateDirectory(userDataFolder);
         var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: userDataFolder);
         await Browser.EnsureCoreWebView2Async(environment);

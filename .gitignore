@@ -25,4 +25,15 @@ decisions.json
 
 # Packages / test
 *.nupkg
-TestResults/
+TestResults/TestResults/
+bin/
+obj/
+.vs/
+.cache/
+*.user
+*.suo
+*.log
+*.tmp
+*.zip
+*.rar
+*.7z

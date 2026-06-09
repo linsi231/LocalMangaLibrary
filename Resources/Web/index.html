@@ -16,7 +16,10 @@
         </div>
       </div>
       <nav class="side-nav" aria-label="主导航">
-        <button class="active">媒体库</button>
+        <button class="active" data-view="library">本地媒体库</button>
+        <button data-view="history">历史记录</button>
+        <button data-view="settings">设置</button>
+        <button id="exitButton">退出</button>
       </nav>
       <section class="storage-card">
         <span>当前库</span>
@@ -28,19 +31,13 @@
     <main class="app-shell">
       <header class="topbar">
         <button class="icon-button" id="menuButton" aria-label="菜单">☰</button>
-        <h1>媒体库</h1>
+        <h1 id="pageTitle">媒体库</h1>
         <label class="search-box">
           <span>⌕</span>
           <input id="searchInput" type="search" placeholder="搜索目录名" autocomplete="off" />
         </label>
         <div class="top-actions">
-          <button class="icon-button active" aria-label="网格视图">▦</button>
-          <select id="sortSelect" aria-label="排序">
-            <option value="name">名称</option>
-            <option value="modified">修改时间</option>
-            <option value="files">文件数量</option>
-            <option value="size">总大小</option>
-          </select>
+          <button class="top-search-button" id="topSearchButton" aria-label="搜索">搜索</button>
         </div>
       </header>
 
@@ -53,32 +50,136 @@
           <input id="rootInput" type="text" placeholder="例如 D:\Manga 或 E:\Books\Comic" />
           <button id="saveRootButton">确认路径</button>
           <button class="primary" id="refreshButton">刷新索引</button>
+          <button id="cancelScanButton" hidden>取消扫描</button>
         </div>
       </section>
 
-      <section class="cache-band">
+      <section class="history-panel" id="historyRecentPanel" hidden>
+        <div class="section-head">
+          <div>
+            <h2>历史阅读</h2>
+            <span>最近 100 条阅读记录</span>
+          </div>
+          <div class="head-actions">
+            <button class="danger-soft" id="clearRecentHistoryButton">清除阅读历史</button>
+          </div>
+        </div>
+        <section class="history-list" id="historyRecentGrid"></section>
+      </section>
+
+      <section class="history-panel" id="rootHistoryPanel" hidden>
+        <div class="section-head">
+          <div>
+            <h2>历史访问目录</h2>
+            <span>最近 20 个漫画库根目录</span>
+          </div>
+          <div class="head-actions">
+            <button class="danger-soft" id="clearRootHistoryButton">清除访问目录</button>
+            <button class="danger-soft" id="clearAllHistoryButton">清除全部历史</button>
+          </div>
+        </div>
+        <section class="root-history-list" id="rootHistoryList"></section>
+      </section>
+
+      <section class="settings-panel" id="settingsPanel" hidden>
+        <section class="settings-group">
+          <button class="settings-row" data-settings-section="appearance">
+            <span>
+              <strong>外观设置</strong>
+              <small>切换应用界面颜色风格</small>
+            </span>
+            <em id="themeSummary">默认蓝色</em>
+          </button>
+          <div class="settings-detail" id="appearanceSettings" hidden>
+            <div class="theme-options" id="themeOptions">
+              <button data-theme="blue">默认蓝色</button>
+              <button data-theme="dark">黑色主题</button>
+              <button data-theme="green">墨绿色</button>
+              <button data-theme="gray">灰色主题</button>
+              <button data-theme="purple">紫色主题</button>
+              <button data-theme="orange">橙色主题</button>
+            </div>
+          </div>
+        </section>
+        <section class="settings-group">
+          <button class="settings-row" data-settings-section="cache">
+            <span>
+              <strong>缓存管理</strong>
+              <small>清理缩略图和阅读缓存，不影响原始文件</small>
+            </span>
+            <em id="cacheSummary">读取中</em>
+          </button>
+          <div class="settings-detail" id="cacheSettings" hidden>
+            <dl class="settings-kv">
+              <dt>当前缓存目录</dt>
+              <dd id="settingsCachePath">-</dd>
+              <dt>当前缓存大小</dt>
+              <dd id="settingsCacheSize">-</dd>
+              <dt>缓存文件数量</dt>
+              <dd id="settingsCacheFiles">-</dd>
+            </dl>
+            <button class="danger-soft" id="clearCacheButton">立即清除缓存</button>
+            <small>清理删除日志保存在本地日志目录，不会触碰漫画源目录。</small>
+          </div>
+        </section>
+        <section class="settings-group">
+          <button class="settings-row" data-settings-section="version">
+            <span>
+              <strong>版本信息</strong>
+              <small>查看本版本更新内容</small>
+            </span>
+            <em id="versionSummary">读取中</em>
+          </button>
+          <div class="settings-detail" id="versionSettings" hidden>
+            <dl class="settings-kv">
+              <dt>当前版本</dt>
+              <dd id="displayVersion">读取中</dd>
+              <dt>内部版本</dt>
+              <dd id="internalVersion">读取中</dd>
+            </dl>
+            <h3>新增功能</h3>
+            <ul id="newFeatures"></ul>
+            <h3>Bug 修复</h3>
+            <ul id="bugFixes"></ul>
+          </div>
+        </section>
+        <section class="settings-group">
+          <button class="settings-row" data-settings-section="about">
+            <span>
+              <strong>关于</strong>
+              <small>本地漫画目录快速浏览工具</small>
+            </span>
+            <em>Local</em>
+          </button>
+          <div class="settings-detail" id="aboutSettings" hidden>
+            <dl class="settings-kv">
+              <dt>应用名称</dt>
+              <dd id="appName">Local Manga Library</dd>
+              <dt>当前架构</dt>
+              <dd id="appArchitecture">WPF + WebView2</dd>
+            </dl>
+          </div>
+        </section>
+      </section>
+
+      <section class="section-head" id="recentHead" hidden>
         <div>
-          <strong>缓存管理</strong>
-          <span id="cacheInfo">缓存位置：.cache</span>
-        </div>
-        <button id="clearCacheButton">清除缓存</button>
-      </section>
-
-      <section class="section-head">
-        <div>
-          <h2>最近浏览的作品</h2>
+          <h2>历史阅读</h2>
         </div>
       </section>
-      <section class="recent-strip" id="recentStrip"></section>
+      <section class="recent-strip" id="recentStrip" hidden></section>
 
-      <section class="section-head library-head">
+      <section class="section-head library-head" id="libraryHead">
         <div>
           <h2>本地媒体库</h2>
           <span id="libraryCount">合计：0 作品</span>
         </div>
         <span id="statusText"></span>
       </section>
-      <section class="grid" id="libraryGrid"></section>
+      <section class="library-list" id="libraryGrid"></section>
+      <div class="load-more-row">
+        <button id="loadMoreButton" hidden>加载更多</button>
+      </div>
     </main>
 
     <aside class="detail-panel" id="detailPanel" aria-hidden="true">
@@ -152,6 +253,22 @@
             <span class="size-label"></span>
           </div>
         </button>
+        <button class="card-detail-button">详情</button>
+      </article>
+    </template>
+
+    <template id="rowTemplate">
+      <article class="work-row">
+        <label class="row-check"><input type="checkbox" /></label>
+        <div class="row-main">
+          <strong></strong>
+          <span class="row-path"></span>
+        </div>
+        <span class="row-stat image-count"></span>
+        <span class="row-stat file-count"></span>
+        <span class="row-stat size-label"></span>
+        <span class="row-stat modified-label"></span>
+        <span class="row-badge"></span>
         <button class="card-detail-button">详情</button>
       </article>
     </template>
