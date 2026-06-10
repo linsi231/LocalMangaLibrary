@@ -154,10 +154,20 @@
           <div class="settings-detail" id="aboutSettings" hidden>
             <dl class="settings-kv">
               <dt>应用名称</dt>
-              <dd id="appName">Local Manga Library</dd>
+              <dd id="appName">LocalMangaLibrary</dd>
+              <dt>当前版本号</dt>
+              <dd id="assemblyVersion">Unknown</dd>
+              <dt>简短说明</dt>
+              <dd id="appDescription">轻量级本地漫画/图片库浏览工具</dd>
+              <dt>GitHub</dt>
+              <dd id="githubUrl">https://github.com/linsi231/LocalMangaLibrary</dd>
               <dt>当前架构</dt>
               <dd id="appArchitecture">WPF + WebView2</dd>
             </dl>
+            <div class="about-actions">
+              <button id="openGitHubButton">打开 GitHub 项目主页</button>
+              <button id="openReleasesButton">打开 Releases 页面</button>
+            </div>
           </div>
         </section>
       </section>
@@ -235,6 +245,13 @@
           </div>
           <button id="readerPrev">上一页</button>
           <button id="readerNext">下一页</button>
+          <select id="autoPlayInterval" aria-label="自动播放间隔">
+            <option value="2">2 秒</option>
+            <option value="3" selected>3 秒</option>
+            <option value="5">5 秒</option>
+            <option value="10">10 秒</option>
+          </select>
+          <button id="autoPlayButton">开始自动播放</button>
         </div>
       </header>
       <div class="reader-stage" id="readerStage"></div>

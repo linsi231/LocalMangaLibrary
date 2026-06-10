@@ -12,6 +12,7 @@ public sealed class RuntimeStateService
     public List<DeleteLogItem> DeleteLogs { get; private set; } = [];
     public List<RecentItem> Recent { get; private set; } = [];
     public List<RootHistoryItem> RootHistory { get; private set; } = [];
+    public LibraryUiState LibraryUiState { get; private set; } = new();
     public Guid RootVersion { get; private set; } = Guid.NewGuid();
 
     public RuntimeSnapshot Snapshot()
@@ -26,6 +27,7 @@ public sealed class RuntimeStateService
                 DeleteLogs = DeleteLogs.ToList(),
                 Recent = Recent.ToList(),
                 RootHistory = RootHistory.ToList(),
+                LibraryUiState = CloneLibraryUiState(LibraryUiState),
                 RootVersion = RootVersion,
             };
         }
@@ -46,6 +48,7 @@ public sealed class RuntimeStateService
             CurrentIndex = new LibraryIndex { RootPath = rootPath, ScanSource = "empty" };
             Decisions = [];
             DeleteLogs = [];
+            LibraryUiState = NewLibraryUiState(RootVersion);
             return RootVersion;
         }
     }
@@ -60,6 +63,7 @@ public sealed class RuntimeStateService
             CurrentIndex = new LibraryIndex { RootPath = rootPath, ScanSource = "scanning" };
             Decisions = [];
             DeleteLogs = [];
+            LibraryUiState = NewLibraryUiState(RootVersion);
             return RootVersion;
         }
     }
@@ -135,6 +139,19 @@ public sealed class RuntimeStateService
         }
     }
 
+    public void SetLibraryUiState(LibraryUiState uiState)
+    {
+        lock (_lock)
+        {
+            if (!Guid.TryParse(uiState.RootVersion, out var version) || version != RootVersion)
+            {
+                return;
+            }
+
+            LibraryUiState = CloneLibraryUiState(uiState);
+        }
+    }
+
     public void ClearRecent()
     {
         lock (_lock)
@@ -170,9 +187,15 @@ public sealed class RuntimeStateService
             DeleteLogs = [];
             Recent = [];
             RootHistory = [];
+            LibraryUiState = new LibraryUiState();
             RootVersion = Guid.NewGuid();
         }
     }
+
+    private static LibraryUiState NewLibraryUiState(Guid rootVersion) => new()
+    {
+        RootVersion = rootVersion.ToString("N"),
+    };
 
     private static LibraryConfig CloneConfig(LibraryConfig source) => new()
     {
@@ -204,6 +227,19 @@ public sealed class RuntimeStateService
         CsvAttempt = source.CsvAttempt,
     };
 
+    private static LibraryUiState CloneLibraryUiState(LibraryUiState source) => new()
+    {
+        SelectedWorkPath = source.SelectedWorkPath,
+        SelectedWorkIndex = source.SelectedWorkIndex,
+        ScrollOffset = source.ScrollOffset,
+        CurrentPage = source.CurrentPage,
+        SearchQuery = source.SearchQuery,
+        SortMode = source.SortMode,
+        FilterMode = source.FilterMode,
+        ViewMode = source.ViewMode,
+        RootVersion = source.RootVersion,
+    };
+
     private static bool SamePath(string left, string right)
     {
         if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
@@ -233,5 +269,6 @@ public sealed class RuntimeSnapshot
     public List<DeleteLogItem> DeleteLogs { get; set; } = [];
     public List<RecentItem> Recent { get; set; } = [];
     public List<RootHistoryItem> RootHistory { get; set; } = [];
+    public LibraryUiState LibraryUiState { get; set; } = new();
     public Guid RootVersion { get; set; }
 }

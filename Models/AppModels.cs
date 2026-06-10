@@ -22,10 +22,13 @@ public sealed class LibraryConfig
 
 public static class AppInfo
 {
-    public const string Name = "Local Manga Library";
+    public const string Name = "LocalMangaLibrary";
     public const string DisplayVersion = "Alpha 3";
     public const string InternalVersion = "0.3.0-alpha";
     public const string Architecture = "WPF + WebView2";
+    public const string Description = "轻量级本地漫画/图片库浏览工具";
+    public const string GitHubRepositoryUrl = "https://github.com/linsi231/LocalMangaLibrary";
+    public const string GitHubReleasesUrl = "https://github.com/linsi231/LocalMangaLibrary/releases";
 
     public static readonly string[] NewFeatures =
     [
@@ -225,6 +228,36 @@ public sealed class RootHistoryItem
 
     [JsonPropertyName("missing")]
     public bool Missing { get; set; }
+}
+
+public sealed class LibraryUiState
+{
+    [JsonPropertyName("selected_work_path")]
+    public string? SelectedWorkPath { get; set; }
+
+    [JsonPropertyName("selected_work_index")]
+    public int SelectedWorkIndex { get; set; } = -1;
+
+    [JsonPropertyName("scroll_offset")]
+    public double ScrollOffset { get; set; }
+
+    [JsonPropertyName("current_page")]
+    public int CurrentPage { get; set; } = 1;
+
+    [JsonPropertyName("search_query")]
+    public string SearchQuery { get; set; } = "";
+
+    [JsonPropertyName("sort_mode")]
+    public string SortMode { get; set; } = "name";
+
+    [JsonPropertyName("filter_mode")]
+    public string FilterMode { get; set; } = "all";
+
+    [JsonPropertyName("view_mode")]
+    public string ViewMode { get; set; } = "grid";
+
+    [JsonPropertyName("root_version")]
+    public string RootVersion { get; set; } = "";
 }
 
 public sealed class CacheCleanupResult

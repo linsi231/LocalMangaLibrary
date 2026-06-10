@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
@@ -56,6 +57,8 @@ public sealed class LocalApiService
                 "/api/app/info" when method == "GET" => JsonResponse(env, 200, ApiAppInfo()),
                 "/api/library" when method == "GET" => JsonResponse(env, 200, ApiLibrary()),
                 "/api/library/query" when method == "GET" => JsonResponse(env, 200, ApiLibraryQuery(uri)),
+                "/api/library/ui-state" when method == "GET" => JsonResponse(env, 200, ApiLibraryUiState()),
+                "/api/library/ui-state" when method == "POST" => JsonResponse(env, 200, await ApiLibraryUiStateAsync(body)),
                 "/api/cache" when method == "GET" => JsonResponse(env, 200, CacheStats()),
                 "/api/cache/status" when method == "GET" => JsonResponse(env, 200, CacheStats()),
                 "/api/config" when method == "POST" => JsonResponse(env, 200, await ApiConfigAsync(body)),
@@ -80,6 +83,7 @@ public sealed class LocalApiService
                 "/api/history/recent/update" when method == "POST" => JsonResponse(env, 200, await ApiRecentAsync(body)),
                 "/api/history/recent/clear" when method == "POST" => JsonResponse(env, 200, ApiRecentClear()),
                 "/api/history/clear" when method == "POST" => JsonResponse(env, 200, ApiHistoryClear()),
+                "/api/open-url" when method == "POST" => JsonResponse(env, 200, await ApiOpenUrlAsync(body)),
                 "/api/app/exit" when method == "POST" => JsonResponse(env, 200, ApiExit()),
                 "/api/work-thumb" when method == "GET" => ApiWorkThumb(env, uri),
                 "/api/reader-image" when method == "GET" => ApiReaderImage(env, uri),
@@ -195,7 +199,11 @@ public sealed class LocalApiService
         name = AppInfo.Name,
         display_version = AppInfo.DisplayVersion,
         internal_version = AppInfo.InternalVersion,
+        assembly_version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "Unknown",
         architecture = AppInfo.Architecture,
+        description = AppInfo.Description,
+        github_url = AppInfo.GitHubRepositoryUrl,
+        releases_url = AppInfo.GitHubReleasesUrl,
         new_features = AppInfo.NewFeatures,
         bug_fixes = AppInfo.BugFixes,
     };
@@ -316,6 +324,43 @@ public sealed class LocalApiService
             },
             root_version = snapshot.RootVersion.ToString("N"),
         };
+    }
+
+    private object ApiLibraryUiState()
+    {
+        var snapshot = _runtime.Snapshot();
+        return new
+        {
+            ok = true,
+            ui_state = snapshot.LibraryUiState,
+            root_version = snapshot.RootVersion.ToString("N"),
+        };
+    }
+
+    private async Task<object> ApiLibraryUiStateAsync(Stream? body)
+    {
+        var doc = await ReadBodyAsync(body);
+        var snapshot = _runtime.Snapshot();
+        var rootVersion = GetString(doc, "root_version", snapshot.RootVersion.ToString("N"));
+        if (!string.Equals(rootVersion, snapshot.RootVersion.ToString("N"), StringComparison.OrdinalIgnoreCase))
+        {
+            return new { ok = false, ignored = true, reason = "RootVersion 不一致，已丢弃旧库位置状态。" };
+        }
+
+        var uiState = new LibraryUiState
+        {
+            SelectedWorkPath = GetString(doc, "selected_work_path"),
+            SelectedWorkIndex = GetInt(doc, "selected_work_index", -1),
+            ScrollOffset = GetDouble(doc, "scroll_offset", 0),
+            CurrentPage = Math.Max(1, GetInt(doc, "current_page", 1)),
+            SearchQuery = GetString(doc, "search_query"),
+            SortMode = GetString(doc, "sort_mode", "name"),
+            FilterMode = GetString(doc, "filter_mode", "all"),
+            ViewMode = GetString(doc, "view_mode", "grid"),
+            RootVersion = rootVersion,
+        };
+        _runtime.SetLibraryUiState(uiState);
+        return new { ok = true, ui_state = uiState };
     }
 
     private async Task<object> ApiConfigAsync(Stream? body)
@@ -568,6 +613,25 @@ public sealed class LocalApiService
         }
         Process.Start(new ProcessStartInfo("explorer.exe", $"\"{folderPath}\"") { UseShellExecute = true });
         return new { ok = true };
+    }
+
+    private async Task<object> ApiOpenUrlAsync(Stream? body)
+    {
+        var doc = await ReadBodyAsync(body);
+        var target = GetString(doc, "target", "repo");
+        var url = target.Equals("releases", StringComparison.OrdinalIgnoreCase)
+            ? AppInfo.GitHubReleasesUrl
+            : AppInfo.GitHubRepositoryUrl;
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            return new { ok = true, url };
+        }
+        catch
+        {
+            throw new ApiException(500, "无法打开浏览器，请手动访问 GitHub 项目页面。");
+        }
     }
 
     private async Task<object> ApiDecisionsAsync(Stream? body)
@@ -1176,6 +1240,21 @@ public sealed class LocalApiService
         }
 
         return value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), out number) ? number : fallback;
+    }
+
+    private static double GetDouble(JsonDocument doc, string key, double fallback = 0)
+    {
+        if (!doc.RootElement.TryGetProperty(key, out var value))
+        {
+            return fallback;
+        }
+
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number))
+        {
+            return number;
+        }
+
+        return value.ValueKind == JsonValueKind.String && double.TryParse(value.GetString(), out number) ? number : fallback;
     }
 
     private static string Query(Uri uri, string key)

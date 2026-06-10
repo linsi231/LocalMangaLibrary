@@ -12,6 +12,8 @@ const state = {
   appInfo: null,
   theme: "blue",
   libraryViewMode: "grid",
+  rootVersion: "",
+  libraryUiState: null,
   view: "library",
   selected: null,
   query: "",
@@ -30,6 +32,10 @@ const state = {
     page: 0,
     preloaded: new Set(),
     progressTimer: null,
+    autoPlayTimer: null,
+    autoPlaySeconds: 3,
+    isAutoPlaying: false,
+    isTurningPage: false,
   },
 };
 
@@ -102,7 +108,12 @@ const els = {
   displayVersion: document.querySelector("#displayVersion"),
   internalVersion: document.querySelector("#internalVersion"),
   appName: document.querySelector("#appName"),
+  assemblyVersion: document.querySelector("#assemblyVersion"),
+  appDescription: document.querySelector("#appDescription"),
+  githubUrl: document.querySelector("#githubUrl"),
   appArchitecture: document.querySelector("#appArchitecture"),
+  openGitHubButton: document.querySelector("#openGitHubButton"),
+  openReleasesButton: document.querySelector("#openReleasesButton"),
   newFeatures: document.querySelector("#newFeatures"),
   bugFixes: document.querySelector("#bugFixes"),
   reader: document.querySelector("#reader"),
@@ -112,6 +123,8 @@ const els = {
   readerStage: document.querySelector("#readerStage"),
   readerPrev: document.querySelector("#readerPrev"),
   readerNext: document.querySelector("#readerNext"),
+  autoPlayButton: document.querySelector("#autoPlayButton"),
+  autoPlayInterval: document.querySelector("#autoPlayInterval"),
   verticalModeButton: document.querySelector("#verticalModeButton"),
   horizontalSingleModeButton: document.querySelector("#horizontalSingleModeButton"),
   horizontalModeButton: document.querySelector("#horizontalModeButton"),
@@ -201,9 +214,16 @@ function bindEvents() {
   els.addRecentButton.addEventListener("click", addSelectedRecent);
   els.markDuplicateButton.addEventListener("click", () => saveDecision("check_duplicate"));
   els.clearCacheButton.addEventListener("click", clearCache);
+  els.openGitHubButton.addEventListener("click", () => openExternalUrl("repo"));
+  els.openReleasesButton.addEventListener("click", () => openExternalUrl("releases"));
   els.readerClose.addEventListener("click", closeReader);
-  els.readerPrev.addEventListener("click", readerPrev);
-  els.readerNext.addEventListener("click", readerNext);
+  els.readerPrev.addEventListener("click", () => readerPrev({ manual: true }));
+  els.readerNext.addEventListener("click", () => readerNext({ manual: true }));
+  els.autoPlayButton.addEventListener("click", toggleAutoPlay);
+  els.autoPlayInterval.addEventListener("change", () => {
+    state.reader.autoPlaySeconds = Number(els.autoPlayInterval.value) || 3;
+    if (state.reader.isAutoPlaying) restartAutoPlayTimer();
+  });
   els.verticalModeButton.addEventListener("click", () => setReaderMode("vertical"));
   els.horizontalSingleModeButton.addEventListener("click", () => setReaderMode("horizontal-single"));
   els.horizontalModeButton.addEventListener("click", () => setReaderMode("horizontal"));
@@ -220,6 +240,7 @@ async function loadStatus() {
   state.confirmed = Boolean(state.rootPath && state.rootExists);
   state.theme = data.theme || "blue";
   state.libraryViewMode = data.library_view_mode || "grid";
+  state.rootVersion = data.root_version || "";
   applyTheme(state.theme);
   syncLibraryViewModeButtons();
   els.rootInput.value = state.rootPath;
@@ -243,8 +264,12 @@ async function loadAppInfo() {
     state.appInfo = {
       display_version: "读取中",
       internal_version: "读取中",
-      name: "Local Manga Library",
+      assembly_version: "Unknown",
+      name: "LocalMangaLibrary",
       architecture: "WPF + WebView2",
+      description: "轻量级本地漫画/图片库浏览工具",
+      github_url: "https://github.com/linsi231/LocalMangaLibrary",
+      releases_url: "https://github.com/linsi231/LocalMangaLibrary/releases",
       new_features: [],
       bug_fixes: [],
     };
@@ -271,6 +296,7 @@ async function loadLibraryPage(page = 1, replace = true) {
     pageSize: String(state.pageSize),
   });
   const data = await requestJson(`/api/library/query?${params.toString()}`);
+  if (data.root_version) state.rootVersion = data.root_version;
   if (replace && data.needs_scan) {
     state.page = 1;
     state.totalPages = 1;
@@ -368,6 +394,7 @@ async function clearCache() {
 }
 
 async function saveRoot() {
+  stopAutoPlay();
   setBusy("正在确认路径...");
   try {
     const rootPath = els.rootInput.value.trim();
@@ -376,6 +403,7 @@ async function saveRoot() {
       body: JSON.stringify({ root_path: rootPath }),
     });
     state.rootPath = data.root_path;
+    state.rootVersion = data.root_version || state.rootVersion;
     state.rootExists = true;
     state.confirmed = true;
     resetLibraryState();
@@ -392,6 +420,7 @@ async function saveRoot() {
 }
 
 async function refreshIndex() {
+  stopAutoPlay();
   if (!state.confirmed) {
     setBusy("请先确认漫画库路径，再刷新索引。");
     return;
@@ -411,6 +440,7 @@ async function refreshIndex() {
       body: JSON.stringify({ root_path: rootPath }),
     });
     state.scanJobId = data.job_id || "";
+    state.rootVersion = data.root_version || state.rootVersion;
     applyScanProgress(data.job || { index: data.index, status: "queued", done: 0, total: 0 });
     pollScan(data.job_id);
   } catch (error) {
@@ -452,6 +482,7 @@ async function pollScan(jobId) {
 }
 
 function applyScanProgress(job) {
+  if (job.root_version) state.rootVersion = job.root_version;
   state.rootPath = job.root_path || state.rootPath;
   els.sidebarRoot.textContent = state.rootPath || "未设置";
   const total = Number(job.total || 0);
@@ -532,6 +563,7 @@ function setActivePage(view) {
 function resetLibraryState() {
   state.items = [];
   state.selectedPaths.clear();
+  state.libraryUiState = null;
   state.query = "";
   state.sort = "name";
   state.status = "all";
@@ -547,6 +579,69 @@ function resetLibraryState() {
 function syncLibraryViewModeButtons() {
   els.gridViewButton?.classList.toggle("active", state.libraryViewMode === "grid");
   els.detailViewButton?.classList.toggle("active", state.libraryViewMode === "detail");
+}
+
+function makeLibraryUiState(item) {
+  return {
+    selected_work_path: item?.folder_path || "",
+    selected_work_index: state.items.findIndex((entry) => samePath(entry.folder_path, item?.folder_path)),
+    scroll_offset: window.scrollY || document.documentElement.scrollTop || 0,
+    current_page: state.page,
+    search_query: state.query,
+    sort_mode: state.sort,
+    filter_mode: state.status,
+    view_mode: state.libraryViewMode,
+    root_version: state.rootVersion,
+  };
+}
+
+async function saveLibraryUiPosition(item) {
+  if (!item || !state.rootVersion || state.view !== "library") return;
+  state.libraryUiState = makeLibraryUiState(item);
+  renderLibrarySelection();
+  requestJson("/api/library/ui-state", {
+    method: "POST",
+    body: JSON.stringify(state.libraryUiState),
+  }).catch(() => {
+    // 位置状态只服务本次前端会话，后端保存失败不影响阅读。
+  });
+}
+
+function restoreLibraryUiPosition() {
+  const uiState = state.libraryUiState;
+  if (!uiState || uiState.root_version !== state.rootVersion || state.view !== "library") return;
+  renderLibrarySelection();
+  window.requestAnimationFrame(() => {
+    window.scrollTo({ top: Number(uiState.scroll_offset || 0), left: 0, behavior: "auto" });
+    window.setTimeout(() => scrollSelectedWorkIntoView(uiState), 40);
+    window.setTimeout(() => scrollSelectedWorkIntoView(uiState), 180);
+  });
+}
+
+function scrollSelectedWorkIntoView(uiState) {
+  if (!uiState || uiState.root_version !== state.rootVersion) return;
+  const key = normalizePathKey(uiState.selected_work_path);
+  const node = key ? document.querySelector(`[data-path-key="${cssEscape(key)}"]`) : null;
+  if (!node) {
+    window.scrollTo({ top: Number(uiState.scroll_offset || 0), left: 0, behavior: "auto" });
+    return;
+  }
+  node.classList.add("library-selected");
+  node.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
+}
+
+function renderLibrarySelection() {
+  const key = state.libraryUiState?.root_version === state.rootVersion
+    ? normalizePathKey(state.libraryUiState.selected_work_path)
+    : "";
+  document.querySelectorAll(".library-selected").forEach((node) => node.classList.remove("library-selected"));
+  if (!key) return;
+  document.querySelectorAll(`[data-path-key="${cssEscape(key)}"]`).forEach((node) => node.classList.add("library-selected"));
+}
+
+function isSelectedLibraryItem(item) {
+  return state.libraryUiState?.root_version === state.rootVersion
+    && samePath(state.libraryUiState.selected_work_path, item?.folder_path);
 }
 
 async function setLibraryViewMode(mode) {
@@ -593,6 +688,8 @@ function createRow(item) {
   const node = els.rowTemplate.content.firstElementChild.cloneNode(true);
   const checkbox = node.querySelector("input");
   const key = normalizePathKey(item.folder_path);
+  node.dataset.pathKey = key;
+  node.classList.toggle("library-selected", isSelectedLibraryItem(item));
   checkbox.checked = state.selectedPaths.has(key);
   checkbox.addEventListener("change", () => {
     if (checkbox.checked) state.selectedPaths.add(key);
@@ -803,6 +900,8 @@ function createCard(item, options = {}) {
   const button = node.querySelector(".card-button");
   const detailButton = node.querySelector(".card-detail-button");
   const img = node.querySelector("img");
+  node.dataset.pathKey = normalizePathKey(item.folder_path);
+  node.classList.toggle("library-selected", isSelectedLibraryItem(item));
   img.src = thumbSource(item);
   img.alt = item.folder_name;
   node.querySelector("strong").textContent = item.folder_name;
@@ -905,6 +1004,7 @@ async function saveDecision(status) {
 
 async function openReader(startPage = 0, mode = "horizontal") {
   if (!state.selected) return;
+  stopAutoPlay();
   setBusy("正在载入漫画图片...");
   try {
     const data = await requestJson("/api/work-images", {
@@ -942,18 +1042,22 @@ async function openReader(startPage = 0, mode = "horizontal") {
 
 async function openReaderFor(item, startPage = 0, mode = "horizontal") {
   state.selected = item;
+  await saveLibraryUiPosition(item);
   await openReader(startPage, mode);
 }
 
 function closeReader() {
+  stopAutoPlay();
   document.documentElement.classList.remove("reader-open");
   document.body.classList.remove("reader-open");
   els.reader.classList.remove("open");
   els.reader.setAttribute("aria-hidden", "true");
   els.readerStage.innerHTML = "";
+  restoreLibraryUiPosition();
 }
 
 function setReaderMode(mode) {
+  stopAutoPlay();
   state.reader.mode = mode;
   if (mode === "horizontal") {
     state.reader.page = Math.floor(state.reader.page / 2) * 2;
@@ -977,6 +1081,7 @@ function renderReader() {
   if (!images.length) {
     els.readerCounter.textContent = "0 / 0";
     els.readerStage.innerHTML = `<div class="reader-empty">没有可浏览的图片</div>`;
+    stopAutoPlay();
     return;
   }
 
@@ -991,6 +1096,7 @@ function renderReader() {
     els.readerCounter.textContent = `${page + 1}-${Math.min(page + 2, images.length)} / ${images.length}`;
     els.readerPrev.disabled = page <= 0;
     els.readerNext.disabled = page + 2 >= images.length;
+    syncAutoPlayUi();
     prefetchReaderImages(page, 12);
     return;
   }
@@ -1004,6 +1110,7 @@ function renderReader() {
     els.readerCounter.textContent = `${page + 1} / ${images.length}`;
     els.readerPrev.disabled = page <= 0;
     els.readerNext.disabled = page >= images.length - 1;
+    syncAutoPlayUi();
     prefetchReaderImages(page, 8);
     return;
   }
@@ -1016,6 +1123,7 @@ function renderReader() {
   els.readerCounter.textContent = `${images.length} 张图片`;
   els.readerPrev.disabled = false;
   els.readerNext.disabled = false;
+  syncAutoPlayUi();
   prefetchReaderImages(0, 16);
 }
 
@@ -1054,8 +1162,9 @@ function createReaderPage(image) {
   return figure;
 }
 
-function readerPrev() {
+function readerPrev(options = {}) {
   if (!els.reader.classList.contains("open")) return;
+  if (options.manual) restartAutoPlayTimer();
   if (state.reader.mode === "horizontal") {
     state.reader.page = Math.max(0, state.reader.page - 2);
     renderReader();
@@ -1071,21 +1180,95 @@ function readerPrev() {
   els.readerStage.scrollBy({ top: -window.innerHeight * 0.85, behavior: "smooth" });
 }
 
-function readerNext() {
+function readerNext(options = {}) {
   if (!els.reader.classList.contains("open")) return;
+  if (state.reader.isTurningPage) return;
+  if (!canGoNextReader()) {
+    stopAutoPlay();
+    return;
+  }
+  state.reader.isTurningPage = true;
   if (state.reader.mode === "horizontal") {
     state.reader.page = Math.min(Math.max(0, state.reader.images.length - 1), state.reader.page + 2);
     renderReader();
     saveReaderProgressSoon();
+    releaseReaderTurnLock();
+    if (options.manual) restartAutoPlayTimer();
     return;
   }
   if (state.reader.mode === "horizontal-single") {
     state.reader.page = Math.min(Math.max(0, state.reader.images.length - 1), state.reader.page + 1);
     renderReader();
     saveReaderProgressSoon();
+    releaseReaderTurnLock();
+    if (options.manual) restartAutoPlayTimer();
     return;
   }
   els.readerStage.scrollBy({ top: window.innerHeight * 0.85, behavior: "smooth" });
+  releaseReaderTurnLock();
+  if (options.manual) restartAutoPlayTimer();
+}
+
+function releaseReaderTurnLock() {
+  window.setTimeout(() => {
+    state.reader.isTurningPage = false;
+    if (!canGoNextReader()) stopAutoPlay();
+  }, 320);
+}
+
+function canGoNextReader() {
+  const { images, mode, page } = state.reader;
+  if (!els.reader.classList.contains("open") || images.length <= 1) return false;
+  if (mode === "horizontal") return page + 2 < images.length;
+  if (mode === "horizontal-single") return page < images.length - 1;
+  return els.readerStage.scrollTop + els.readerStage.clientHeight < els.readerStage.scrollHeight - 4;
+}
+
+function toggleAutoPlay() {
+  if (state.reader.isAutoPlaying) {
+    stopAutoPlay();
+    return;
+  }
+  startAutoPlay();
+}
+
+function startAutoPlay() {
+  if (!canGoNextReader()) {
+    setBusy("当前图片数量不足，无法启动自动播放。");
+    syncAutoPlayUi();
+    return;
+  }
+  state.reader.autoPlaySeconds = Number(els.autoPlayInterval.value) || 3;
+  state.reader.isAutoPlaying = true;
+  restartAutoPlayTimer();
+  syncAutoPlayUi();
+}
+
+function restartAutoPlayTimer() {
+  if (!state.reader.isAutoPlaying) return;
+  window.clearInterval(state.reader.autoPlayTimer);
+  state.reader.autoPlayTimer = window.setInterval(() => {
+    if (!canGoNextReader()) {
+      stopAutoPlay();
+      return;
+    }
+    readerNext({ auto: true });
+  }, Math.max(1, state.reader.autoPlaySeconds) * 1000);
+}
+
+function stopAutoPlay() {
+  window.clearInterval(state.reader.autoPlayTimer);
+  state.reader.autoPlayTimer = null;
+  state.reader.isAutoPlaying = false;
+  state.reader.isTurningPage = false;
+  syncAutoPlayUi();
+}
+
+function syncAutoPlayUi() {
+  if (!els.autoPlayButton || !els.autoPlayInterval) return;
+  els.autoPlayButton.textContent = state.reader.isAutoPlaying ? "暂停自动播放" : "开始自动播放";
+  els.autoPlayButton.disabled = !state.reader.isAutoPlaying && !canGoNextReader();
+  els.autoPlayInterval.disabled = state.reader.isAutoPlaying;
 }
 
 function saveReaderProgressSoon() {
@@ -1107,7 +1290,10 @@ function renderAppInfo() {
   els.displayVersion.textContent = info.display_version || "读取中";
   els.internalVersion.textContent = info.internal_version || "读取中";
   els.versionSummary.textContent = info.display_version || "读取中";
-  els.appName.textContent = info.name || "Local Manga Library";
+  els.appName.textContent = info.name || "LocalMangaLibrary";
+  els.assemblyVersion.textContent = info.assembly_version || "Unknown";
+  els.appDescription.textContent = info.description || "轻量级本地漫画/图片库浏览工具";
+  els.githubUrl.textContent = info.github_url || "https://github.com/linsi231/LocalMangaLibrary";
   els.appArchitecture.textContent = info.architecture || "WPF + WebView2";
   els.newFeatures.innerHTML = "";
   els.bugFixes.innerHTML = "";
@@ -1120,6 +1306,17 @@ function renderAppInfo() {
     const li = document.createElement("li");
     li.textContent = text;
     els.bugFixes.appendChild(li);
+  }
+}
+
+async function openExternalUrl(target) {
+  try {
+    await requestJson("/api/open-url", {
+      method: "POST",
+      body: JSON.stringify({ target }),
+    });
+  } catch (error) {
+    setBusy(error.message || "无法打开浏览器，请手动访问 GitHub 项目页面。");
   }
 }
 
@@ -1156,6 +1353,7 @@ async function saveTheme(theme) {
 async function exitApp() {
   const confirmed = window.confirm("确认退出 Local Manga Library？本次运行的路径、索引、历史、设置和缓存都会被清理。");
   if (!confirmed) return;
+  stopAutoPlay();
   setBusy("正在退出...");
   await requestJson("/api/app/exit", { method: "POST" }).catch((error) => setBusy(error.message));
 }
@@ -1163,15 +1361,24 @@ async function exitApp() {
 function handleReaderKeydown(event) {
   if (!els.reader.classList.contains("open")) return;
   if (event.key === "Escape") {
-    closeReader();
+    event.preventDefault();
+    if (state.reader.isAutoPlaying) stopAutoPlay();
+    else closeReader();
+    return;
   }
   if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
     event.preventDefault();
-    readerPrev();
+    readerPrev({ manual: true });
+    return;
   }
-  if (event.key === "ArrowRight" || event.key === "ArrowDown" || event.key === " ") {
+  if (event.key === "ArrowRight" || event.key === "ArrowDown") {
     event.preventDefault();
-    readerNext();
+    readerNext({ manual: true });
+    return;
+  }
+  if (event.key === " ") {
+    event.preventDefault();
+    toggleAutoPlay();
   }
 }
 
@@ -1237,6 +1444,17 @@ function escapeHtml(value) {
 
 function normalizePathKey(value) {
   return String(value).trim().replace(/[\\/]+$/, "").replace(/\//g, "\\").toLocaleLowerCase();
+}
+
+function samePath(left, right) {
+  return normalizePathKey(left) === normalizePathKey(right);
+}
+
+function cssEscape(value) {
+  if (window.CSS && typeof window.CSS.escape === "function") {
+    return window.CSS.escape(String(value));
+  }
+  return String(value).replace(/["\\]/g, "\\$&");
 }
 
 boot().catch((error) => setBusy(error.message));

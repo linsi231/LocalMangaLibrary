@@ -579,6 +579,12 @@ button {
   background: var(--panel);
 }
 
+.work-row.library-selected {
+  border-color: var(--accent);
+  background: var(--soft);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
 .row-check {
   display: grid;
   place-items: center;
@@ -672,6 +678,15 @@ select:disabled {
   border-radius: 8px;
   background: linear-gradient(135deg, #e9edf3, #f7f9fb);
   border: 1px solid #e4e9f0;
+}
+
+.work-card.library-selected .cover-box {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.work-card.library-selected .card-button strong {
+  color: var(--accent-dark);
 }
 
 .cover-box img {
@@ -915,6 +930,22 @@ select:disabled {
   overflow-wrap: anywhere;
 }
 
+.about-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.about-actions button {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 14px;
+  background: var(--panel);
+  color: var(--accent-dark);
+}
+
 .theme-options {
   display: flex;
   gap: 8px;
@@ -980,10 +1011,22 @@ select:disabled {
 }
 
 .reader-controls button,
+.reader-controls select,
 .segmented button {
   border-color: rgba(255, 255, 255, 0.18);
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
+}
+
+.reader-controls select {
+  min-height: 38px;
+  border-radius: 8px;
+  padding: 0 10px;
+  outline: 0;
+}
+
+.reader-controls select option {
+  color: #172033;
 }
 
 .segmented {
